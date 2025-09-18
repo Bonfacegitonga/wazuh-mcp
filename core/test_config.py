@@ -1,5 +1,4 @@
 from config import config
-  # assuming your code is in config.py
 
 print("Opensearch settings:")
 print("  Host:", config.OPENSEARCH_HOST)
