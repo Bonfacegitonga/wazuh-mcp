@@ -1,4 +1,6 @@
 from .client import WazuhClient
+from typing import  Dict, Any
+
 
 
 class Alert:
@@ -123,6 +125,63 @@ class Alert:
             )
 
         return self.client.search_index("wazuh-alerts-*", query)
+    
+    def alerts(
+        self,
+        size: int = 200,
+        time_range: str = "24h",
+        severity: str = "critical",
+        cluster_name: str = "wazuh"
+    ) -> Dict[str, Any]:
+        """
+        Fetch Wazuh alerts with flexible parameters.
+
+        Args:
+            size: Number of results to return (default 200).
+            time_range: Time window, e.g. '24h', '7d', '30d'.
+            severity: One of 'high', 'critical', 'all'.
+            cluster_name: Wazuh cluster name (default 'wazuh').
+
+        Returns:
+            Dictionary with aggregated alerts and total count.
+        """
+        
+        raw = self.fetch_alerts(size=size, time_range=time_range, severity=severity, cluster_name=cluster_name)
+
+        # Aggregate alerts per agent + rule + description
+        aggregated = {}
+        for hit in raw.get("hits", {}).get("hits", []):
+            src = hit.get("_source", {})
+            key = (
+                src.get("agent", {}).get("name"),
+                src.get("rule", {}).get("id"),
+                src.get("rule", {}).get("description")
+            )
+
+            if key not in aggregated:
+                aggregated[key] = {
+                    "rule_id": src.get("rule", {}).get("id"),
+                    "rule_level": src.get("rule", {}).get("level"),
+                    "rule_description": src.get("rule", {}).get("description"),
+                    "agent_name": src.get("agent", {}).get("name"),
+                    "cluster": src.get("cluster", {}).get("name"),
+                    "first_seen": src.get("timestamp"),
+                    "last_seen": src.get("timestamp"),
+                    "count": 1,
+                }
+            else:
+                aggregated[key]["count"] += 1
+                # update last_seen if newer
+                if src.get("timestamp") > aggregated[key]["last_seen"]:
+                    aggregated[key]["last_seen"] = src.get("timestamp")
+
+        simplified = list(aggregated.values())
+
+        return {
+            "alerts": simplified,
+            "total": len(simplified),
+        }
+
 
     def fetch_critical_alerts_24h(self, size: int = 200):
         """
@@ -197,19 +256,4 @@ class Alert:
 if __name__ == "__main__":
     # Create Alert instance
     alert = Alert()
-
-    # Try default params (last 24h, critical severity, size=200)
-    print("=== Default fetch (24h, critical severity) ===")
-    result = alert.fetch_alerts(
-        time_range="24h", 
-        severity="critical"
-    )
-    print(result)
     
-    # Example using convenience methods
-    print("\n=== Using convenience method ===")
-    critical_alerts = alert.fetch_critical_alerts_24h(size=100)
-    print(f"Found critical alerts: {len(critical_alerts.get('hits', {}).get('hits', []))}")
-    
-    # Example showing available severities
-    print(f"\nAvailable severities: {alert.get_available_severities()}")
